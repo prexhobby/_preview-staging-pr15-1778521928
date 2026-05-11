@@ -211,7 +211,7 @@ Supported variables
                 data-preorder-ack
               >
               <label for="preorder-ack-{{ form_id | escape }}" class="text-sm leading-6 mb-1">
-                {% if preorder_arrival_text != blank %}Pre-order ships <b>{{ preorder_arrival_text }}</b>{% else %}Pre-order item{% endif %} — your order will ship together when all items arrive. [MARKER-1778522340-VISIBLE-RIGHT-HERE] To receive in-stock items sooner, place a separate order for them.
+                {% if preorder_arrival_text != blank %}Pre-order ships <b>{{ preorder_arrival_text }}</b>{% else %}Pre-order item{% endif %} — your order will ship together when all items arrive. To receive in-stock items sooner, place a separate order for them.
               </label>
             </div>
           {%- elsif requires_oversize_ack -%}
