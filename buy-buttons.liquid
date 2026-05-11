@@ -1,0 +1,393 @@
+{%- comment -%}
+----------------------------------------------------------------------------------------------------------------------
+BUY BUTTONS
+----------------------------------------------------------------------------------------------------------------------
+
+This component is used to show the buy buttons
+
+********************************************
+Supported variables
+********************************************
+
+* product: the product from which to show the buttons (if empty, a placeholder is displayed)
+* show_payment_button: if we show or not the dynamic checkout button
+* show_gift_card_recipient: for gift card products, an optional message/email to be sent to the recipient
+* atc_button_background: the background of the ATC button
+* atc_button_text_color: the color of the ATC button
+* payment_button_background: the background of the dynamic payment button
+* payment_button_background: the color of the dynamic payment button
+* form_id: if specified, define the form ID linked to this input
+{%- endcomment -%}
+{%- if product != blank -%}
+  {%- liquid
+    assign variant_picker_block = section.blocks | where: 'type', 'variant_picker' | first
+    assign recipient_feature_active = false
+   
+    if product.gift_card? and show_gift_card_recipient
+      assign recipient_feature_active = true
+      assign show_payment_button = false
+    endif
+    
+  -%}
+
+  <product-form>
+    {%- form 'product', product, id: form_id -%}
+      <input type="hidden" {% if variant_picker_block != blank %}disabled{% endif %} name="id" value="{{ product.selected_or_first_available_variant.id }}">
+
+      {% liquid
+        assign button_disabled = false
+        assign product_avail_int=product.metafields.custom.product_avail_int | default: 5
+        assign product_avail_name = product.metafields.custom.product_avail | default: ''
+        assign variant_available = false
+        assign order_qty = product.metafields.custom.pre_order_inventory_real_qty| default: 0
+        if product.selected_or_first_available_variant != nil
+          assign variant_available = product.selected_or_first_available_variant.available
+        endif
+        if product.selected_or_first_available_variant == nil
+          assign button_disabled = true
+          assign button_content = 'product.general.unavailable_button' | t
+        else
+          assign qty=product.selected_or_first_available_variant.inventory_quantity
+          assign category_lv_1 = product.metafields.custom.category_lv_1 | default: ''
+
+          if qty <= 0
+            case product_avail_int
+              when 1
+                assign button_disabled = false
+                assign button_content = 'product.general.add_to_cart_button' | t
+              when 2
+                assign button_disabled = true
+                assign button_content = 'Back Order'
+              when 3
+                assign button_disabled = false
+                assign button_content = 'Pre Order'
+                if category_lv_1 == 'Trading Cards'
+                  assign button_disabled = true
+                endif
+              when 4
+                assign button_disabled = true
+                assign button_content = 'Pre-Order Closed'
+              when 5
+                assign button_disabled = true
+                assign button_content = 'Out of Stock'
+            endcase
+          else
+            assign card_preoder=0
+            if category_lv_1 == 'Trading Cards' and product_avail_name == 'Pre-Order' and product_avail_int == 3
+              assign card_preoder = 1
+            endif
+            if product.template_suffix contains 'pre-order' or card_preoder == 1
+              assign button_content = 'Pre Order'
+            else
+              assign button_content = 'product.general.add_to_cart_button' | t
+            endif
+          endif
+        endif
+        if product.id == 1000
+          assign button_content = 'product.general.add_to_cart_button' | t
+        endif
+      %}
+  
+      <div class="v-stack gap-2">
+        {%- if recipient_feature_active -%}
+          <gift-card-recipient class="gift-card-recipient v-stack gap-3">
+            {%- assign checkbox_label = 'gift_card.recipient.checkbox' | t -%}
+            {%- render 'checkbox', label: checkbox_label, name: 'properties[__shopify_send_gift_card_to_recipient]' -%}
+
+            <div class="gift-card-recipient__fields js:hidden">
+              <div class="fieldset">
+                {%- liquid
+                  assign recipient_email_label = 'gift_card.recipient.email_label' | t
+                  render 'input', type: 'email', label: recipient_email_label, name: 'properties[Recipient email]', value: form.email, required: true
+
+                  assign recipient_name_label = 'gift_card.recipient.name_label' | t
+                  render 'input', label: recipient_name_label, name: 'properties[Recipient name]', value: form.name
+
+                  assign send_on_label = 'gift_card.recipient.send_on_label' | t
+                  render 'input', type: 'date', label: send_on_label, name: 'properties[Send on]', value: form.send_on, pattern: '\d{4}-\d{2}-\d{2}'
+                  render 'input', type: 'hidden', name: 'properties[__shopify_offset]'
+
+                  assign message_label = 'gift_card.recipient.message_label' | t
+                  render 'input', label: message_label, name: 'properties[Message]', value: form.message, multiline: 3, maxlength: 200, show_max_characters_count: true
+                -%}
+              </div>
+            </div>
+          </gift-card-recipient>
+        {%- endif -%}
+        <buy-buttons class="buy-buttons {% if show_payment_button %}buy-buttons--has-dynamic{% endif %}" form="{{ form_id }}">
+          {%- comment -%}
+            Pre-order acknowledgement checkbox required when any single carton or
+            specification dimension exceeds 25 inch (63.5 cm). carton_size takes
+            priority; falls back to specification, then to legacy price > $800
+            rule when neither metafield is set. Logic mirrored in
+            snippets/preorder-tips.liquid; keep both in sync.
+          {%- endcomment -%}
+          {%- liquid
+            assign preorder_ack_threshold_cm = 63.5
+            assign preorder_ack_threshold_cents = 80000
+            assign max_dim_cm = 0
+            assign source_str = ''
+
+            if product.metafields.custom.carton_size != blank
+              assign source_str = product.metafields.custom.carton_size | replace: 'Carton A:', '' | replace: 'Carton B:', '' | replace: 'Carton C:', '' | replace: 'Carton D:', '' | replace: 'Carton E:', '' | replace: 'H ', '' | replace: 'W ', '' | replace: 'D ', '' | replace: 'cm', '' | replace: '×', ' ' | replace: 'x', ' ' | replace: '|', ' ' | newline_to_br | replace: '<br />', ' ' | replace: '<br>', ' '
+            elsif product.metafields.custom.specification != blank
+              assign spec_dim_part = product.metafields.custom.specification | split: ' / ' | first
+              assign source_str = spec_dim_part | replace: 'cm', '' | replace: '×', ' ' | replace: 'x', ' ' | newline_to_br | replace: '<br />', ' ' | replace: '<br>', ' '
+            endif
+
+            if source_str != ''
+              assign tokens = source_str | split: ' '
+              for tok in tokens
+                assign t = tok | strip
+                if t != ''
+                  assign n = t | times: 1.0
+                  if n > max_dim_cm
+                    assign max_dim_cm = n
+                  endif
+                endif
+              endfor
+            endif
+
+            assign requires_preorder_ack = false
+            assign is_preorder_product = false
+            if product_avail_name == 'Pre-Order' or product.template_suffix contains 'pre-order'
+              assign is_preorder_product = true
+            endif
+
+            if is_preorder_product
+              if max_dim_cm > 0
+                if max_dim_cm > preorder_ack_threshold_cm
+                  assign requires_preorder_ack = true
+                endif
+              else
+                assign variant_price_cents = product.selected_or_first_available_variant.price | default: 0
+                if variant_price_cents > preorder_ack_threshold_cents
+                  assign requires_preorder_ack = true
+                endif
+              endif
+            endif
+
+            # Oversize ack — for non-pre-order products only (pre-order ack already
+            # covers the shipping-cost-may-change language). Trigger: any single
+            # carton/spec side > 25 inch (63.5 cm). Blank dimensions DO NOT trigger
+            # — unlike pre-order, there is no price fallback, since "we may charge
+            # extra shipping" needs to be backed by an actual oversize signal.
+            assign requires_oversize_ack = false
+            if is_preorder_product == false and max_dim_cm > 0 and max_dim_cm > preorder_ack_threshold_cm
+              assign requires_oversize_ack = true
+            endif
+          -%}
+
+          {%- if requires_preorder_ack -%}
+            {%- liquid
+              assign preorder_arrival_text = ''
+              assign lsg_product_avail = product.metafields.custom.lsg_product_avail
+              assign category_lv_1 = product.metafields.custom.category_lv_1
+
+              # Back Orders moved to email-subscription model (2026-05-11), so the
+              # old `days_until_ship < 31 and special_preorder == 'Back Orders'`
+              # branch (which formatted a precise %Y-%m-%d date) is dead — P-Rex
+              # batches Universal orders weekly and no longer commits to per-day
+              # ship dates. Always show Month Year now.
+              if product.metafields.custom.ship_date != blank
+                assign ship_date = product.metafields.custom.ship_date
+
+                if lsg_product_avail == 'In Stock' and category_lv_1 == 'Trading Cards'
+                  assign preorder_arrival_text = '15 days after you order'
+                else
+                  assign preorder_arrival_text = ship_date | date: '%b %Y'
+                endif
+              endif
+            -%}
+
+            <div class="checkbox-control">
+              <input
+                id="preorder-ack-{{ form_id | escape }}"
+                class="checkbox"
+                type="checkbox"
+                name="properties[Pre-order acknowledgement]"
+                value="Yes"
+                required
+                data-preorder-ack
+              >
+              <label for="preorder-ack-{{ form_id | escape }}" class="text-sm leading-6 mb-1">
+                {% if preorder_arrival_text != blank %}Pre-order ships <b>{{ preorder_arrival_text }}</b>{% else %}Pre-order item{% endif %} — your order will ship together when all items arrive. To receive in-stock items sooner, place a separate order for them.
+              </label>
+            </div>
+          {%- elsif requires_oversize_ack -%}
+            {%- comment -%}
+              Oversize ack — for in-stock (non-pre-order) products whose carton or
+              specification has at least one side > 25 inch (63.5 cm). Forced
+              checkbox so the customer cannot miss it. Mutually exclusive with the
+              pre-order ack above (pre-order already covers shipping-may-change).
+            {%- endcomment -%}
+            <div class="checkbox-control">
+              <input
+                id="oversize-ack-{{ form_id | escape }}"
+                class="checkbox"
+                type="checkbox"
+                name="properties[Oversize acknowledgement]"
+                value="Yes"
+                required
+                data-oversize-ack
+              >
+              <label for="oversize-ack-{{ form_id | escape }}" class="text-sm leading-6 mb-1">
+                <b>Oversize item</b> — due to its large packaging dimensions, we may need to charge an additional shipping fee before we can ship your order.
+              </label>
+            </div>
+          {%- endif -%}
+
+          {%- if show_payment_button and atc_button_background == blank and atc_button_text_color == blank -%}
+            {%- assign atc_button_style = 'outline' -%}
+          {%- else -%}
+            {%- assign atc_button_style = 'solid' -%}
+          {%- endif -%}
+          
+          {%- unless product.id == 7946586783924 %}
+          {%- if request.page_type == 'product' and localization.country and localization.country.iso_code == 'US' -%}
+            <aside class="us-tariff-pill" role="note">
+              <span class="us-tariff-pill__icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              </span>
+              <span class="us-tariff-pill__text">
+                <strong>No US tariffs</strong> &mdash; duties prepaid
+              </span>
+              <a href="/pages/faqs#us-customs" class="us-tariff-pill__link">Learn more &rarr;</a>
+            </aside>
+            <style>
+              .us-tariff-pill{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;padding:8px 12px;border-radius:8px;font-size:13px;line-height:1.4;margin:0}
+              .us-tariff-pill__icon{display:inline-flex;color:#059669;flex-shrink:0}
+              .us-tariff-pill__text{flex:1 1 auto;min-width:160px}
+              .us-tariff-pill__text strong{color:#065F46}
+              .us-tariff-pill__link{color:#047857;font-weight:600;white-space:nowrap;text-decoration:none;border-bottom:1px solid currentColor}
+              .us-tariff-pill__link:hover{color:#065F46}
+              @media(max-width:480px){.us-tariff-pill{font-size:12px;padding:7px 10px}}
+            </style>
+          {%- endif -%}
+
+          {%- comment -%}
+            CA shipping pill — mirrors the US tariff pill for Canadian shoppers.
+            $300 CAD threshold matches Shopify shipping settings (Canada zone Standard: Free over $300).
+            Same green palette as US pill — consistent positive-news visual language.
+            No "Learn more" link: shipping policy doesn't yet document the CA $300+ threshold;
+            avoid linking to a page that will leave shoppers more confused than before.
+            Static text v1; consider adding cart-aware "$X more" progress in a follow-up PR.
+          {%- endcomment -%}
+          {%- if request.page_type == 'product' and localization.country and localization.country.iso_code == 'CA' and requires_oversize_ack == false -%}
+            <aside class="ca-shipping-pill" role="note">
+              <span class="ca-shipping-pill__icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+              </span>
+              <span class="ca-shipping-pill__text">
+                <strong>FREE shipping</strong> on orders $300+
+              </span>
+            </aside>
+            <style>
+              .ca-shipping-pill{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;padding:8px 12px;border-radius:8px;font-size:13px;line-height:1.4;margin:0}
+              .ca-shipping-pill__icon{display:inline-flex;color:#059669;flex-shrink:0}
+              .ca-shipping-pill__text{flex:1 1 auto}
+              .ca-shipping-pill__text strong{color:#065F46}
+              @media(max-width:480px){.ca-shipping-pill{font-size:12px;padding:7px 10px}}
+            </style>
+          {%- endif -%}
+          {%- endunless -%}
+
+          {% if button_disabled %}
+
+            {% liquid
+              assign wrap_class = ''
+
+              if product_avail_int > 3
+                assign wrap_class = 'hidden'
+              endif
+              if product_avail_int==2
+                assign wrap_class = 'hidden'
+              endif
+              if product_avail_int==3 and product_avail_name!='Pre-Order'
+                assign wrap_class = 'hidden'
+              endif
+              if category_lv_1 == 'Trading Cards' and qty<=0
+                assign wrap_class = 'hidden'
+              endif
+
+            %}
+            <div class={{ wrap_class }}>
+            {%- render 'button',content: button_content, type: 'submit', disabled: button_disabled, style: atc_button_style, background: atc_button_background, text_color: atc_button_text_color, stretch: true -%}
+            </div>
+           {% else %}
+            <button type="submit" class="button w-full !bg-red-500 !border-0 !bg-none !text-white hover:opacity-90">{{ button_content }}</button>
+          {% endif %}
+          {% if product_avail_int >= 2 and wrap_class=='hidden' and button_disabled %}
+            <div class="flex flex-col w-full gap-1" id="subscribe-button">
+              {% if product_avail_int == 2 or product_avail_int == 3 %}
+                <button
+                  type="button"
+                  class="back-instock block text-center button w-full !bg-red-500 !border-0 !bg-none !text-white hover:opacity-90"
+                  data-title="{{ product.title | escape }}"
+                  data-product='{"id":"{{ product.id }}","productAvail":"{{ product_avail_int }}","price":"{{ product.price | money_without_currency }}","image":"{{ product.featured_image |image_url }}","variant":"{{ product.variants.first.id }}"}'
+                  >
+                    {% if product_avail_int == 2 %}
+                      <span>Back-Order subscription</span>
+                    {% else %}
+                      <span>Pre-Order subscription</span>
+                    {% endif %}
+                </button>
+              {% else %}
+                <button
+                  type="button"
+                  style="background:#529dbd"
+                  class="back-instock block text-center w-full text-white py-2.5 hover:opacity-80"
+                  data-title="{{ product.title | escape }}"
+                  data-product='{"id":"{{ product.id }}","productAvail":"{{ product_avail_int }}","price":"{{ product.price | money_without_currency }}","image":"{{ product.featured_image |image_url }}","variant":"{{ product.variants.first.id }}"}'
+                  >
+                    <span>Email me when available</span>
+                </button>
+              {% endif %}
+              <div class="flex items-center justify-between gap-2">
+                {%-if request.page_type =='product' -%}
+                <div class="swym-wishlist-button-bar"></div>
+                {%-endif-%}
+                <div id="subscribe-data"></div>
+              </div>
+            </div>
+          {% else %}
+            {%-if request.page_type =='product' -%}
+            <div class="swym-wishlist-button-bar"></div>
+            {%-endif-%}
+          {% endif %}
+          {% comment %}
+          {%- render 'button',class_name:class_name, content: button_content, type: 'submit', disabled: button_disabled, style: atc_button_style, background: atc_button_background, text_color: atc_button_text_color, stretch: true -%}
+          {% endcomment %}
+          {%- if show_payment_button -%}
+            {{- form | payment_button -}}
+
+            <style>
+              #{{ form_id }} .shopify-payment-button {
+                {%- if payment_button_background != blank and payment_button_background != 'rgba(0,0,0,0)' -%}
+                  --button-background: {{ payment_button_background.rgb }};
+                {%- endif -%}
+
+                {%- if payment_button_text_color != blank and payment_button_text_color != 'rgba(0,0,0,0)' -%}
+                  --button-text-color: {{ payment_button_text_color.rgb }};
+                {%- endif -%}
+
+                {%- unless product.selected_or_first_available_variant.available -%}
+                  display: none;
+                {%- endunless -%}
+              }
+            </style>
+          {%- endif -%}
+        </buy-buttons>
+        
+      </div>
+
+
+    {%- endform -%}
+  </product-form>
+{%- else -%}
+
+  <buy-buttons class="buy-buttons" template="{{ product.template_suffix | escape }}" form="{{ form_id }}">
+    {%- assign button_content = 'product.general.add_to_cart_button' | t -%}
+    {%- render 'button', content: button_content, type: 'submit', background: variant_picker_block.settings.atc_button_background, text_color: variant_picker.settings.atc_button_text_color, stretch: true -%}
+  </buy-buttons>
+{%- endif -%}
