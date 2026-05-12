@@ -167,17 +167,26 @@ Supported variables
               endif
             endif
 
-            # Oversize ack — for non-pre-order products only (pre-order ack already
-            # covers the shipping-cost-may-change language). Trigger: any single
-            # carton/spec side > 25 inch (63.5 cm). Blank dimensions DO NOT trigger
-            # — unlike pre-order, there is no price fallback, since "we may charge
-            # extra shipping" needs to be backed by an actual oversize signal.
+            # Oversize ack — for ANY product (pre-order OR in-stock) whose carton/spec
+            # has a side > 25 inch (63.5 cm). Decoupled from pre-order on 2026-05-11:
+            # pre-order disclosure is now an info notice (not a forced check), so the
+            # oversize ack — which is a real $$$ shipping commitment — needs to stand
+            # on its own and force the customer to acknowledge regardless of pre-order
+            # status. Blank dimensions DO NOT trigger oversize (no fallback) — the
+            # checkbox demands an actual oversize signal.
             assign requires_oversize_ack = false
-            if is_preorder_product == false and max_dim_cm > 0 and max_dim_cm > preorder_ack_threshold_cm
+            if max_dim_cm > 0 and max_dim_cm > preorder_ack_threshold_cm
               assign requires_oversize_ack = true
             endif
           -%}
 
+          {%- comment -%}
+            Pre-order info notice — informational only, NOT a forced checkbox.
+            Decoupled from oversize ack on 2026-05-11: pre-order is just information
+            the customer needs (when the item ships, how mixed-cart shipping works),
+            not a $$$ commitment that requires acknowledgement. Oversize ack below
+            is the only forced check.
+          {%- endcomment -%}
           {%- if requires_preorder_ack -%}
             {%- liquid
               assign preorder_arrival_text = ''
@@ -200,26 +209,17 @@ Supported variables
               endif
             -%}
 
-            <div class="checkbox-control">
-              <input
-                id="preorder-ack-{{ form_id | escape }}"
-                class="checkbox"
-                type="checkbox"
-                name="properties[Pre-order acknowledgement]"
-                value="Yes"
-                required
-                data-preorder-ack
-              >
-              <label for="preorder-ack-{{ form_id | escape }}" class="text-sm leading-6 mb-1">
-                {% if preorder_arrival_text != blank %}Pre-order ships <b>{{ preorder_arrival_text }}</b>{% else %}Pre-order item{% endif %} — your order will ship together when all items arrive. To receive in-stock items sooner, place a separate order for them.
-              </label>
+            <div class="text-sm leading-6 mb-1">
+              {% if preorder_arrival_text != blank %}Pre-order ships <b>{{ preorder_arrival_text }}</b>{% else %}Pre-order item{% endif %} — your order will ship together when all items arrive. To receive in-stock items sooner, place a separate order for them.
             </div>
-          {%- elsif requires_oversize_ack -%}
+          {%- endif -%}
+
+          {%- if requires_oversize_ack -%}
             {%- comment -%}
-              Oversize ack — for in-stock (non-pre-order) products whose carton or
-              specification has at least one side > 25 inch (63.5 cm). Forced
-              checkbox so the customer cannot miss it. Mutually exclusive with the
-              pre-order ack above (pre-order already covers shipping-may-change).
+              Oversize ack — forced checkbox for ANY product (pre-order OR in-stock)
+              with a carton/spec side > 25 inch (63.5 cm). Customer must acknowledge
+              because oversize triggers a real shipping-fee adjustment we may charge
+              before ship. Can co-fire with the pre-order info notice above.
             {%- endcomment -%}
             <div class="checkbox-control">
               <input
